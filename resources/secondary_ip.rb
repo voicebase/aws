@@ -1,4 +1,4 @@
-property :ip,                    String, required: true
+property :ip,                    String #, required: true
 property :interface,             String, default: lazy { node['network']['default_interface'] }
 property :timeout,               [Integer, nil], default: 3 * 60 # 3 mins, nil or 0 for no timeout
 
@@ -26,7 +26,8 @@ action :assign do
       begin
         Timeout.timeout(new_resource.timeout) do
           # if the IP isn't there then sleep, reload ohai data and check again
-          until interface_private_ips(new_resource.interface).include?(new_resource.ip)
+          until [query_private_ip_addresses(new_resource.interface)].flatten.count > [assigned_addresses].flatten.count
+            #interface_private_ips(new_resource.interface).include?(new_resource.ip)
             sleep 4
 
             # make sure ohai has the updated interface information
@@ -105,6 +106,13 @@ action_class do
     node['network']['interfaces'][interface]['addresses'].select do |_, e|
       e['family'] == 'lladdr'
     end.keys.first.downcase
+  end
+
+  def query_private_ip_addresses(interface)
+    mac = interface_mac_address(interface)
+    ip_addresses = open("http://169.254.169.254/latest/meta-data/network/interfaces/macs/#{mac}/local-ipv4s", options = { proxy: false }) { |f| f.read.split("\n") }
+    Chef::Log.debug("#{interface} assigned local ipv4s addresses is/are #{ip_addresses.join(',')}")
+    ip_addresses
   end
 
   # return an array of all private IPs on an interface
